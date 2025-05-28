@@ -36,13 +36,13 @@ func main() {
 
 	serveMux := http.ServeMux{}
 	serveMux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
-	serveMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	serveMux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(200)
 		w.Write([]byte{'O', 'K'})
 	})
-	serveMux.HandleFunc("/metrics", cfg.handlerGetMetrics)
-	serveMux.HandleFunc("/reset", cfg.handlerResetMetrics)
+	serveMux.HandleFunc("GET /api/metrics", cfg.handlerGetMetrics)
+	serveMux.HandleFunc("POST /api/reset", cfg.handlerResetMetrics)
 	server := http.Server{
 		Addr:    ":8080",
 		Handler: &serveMux,
