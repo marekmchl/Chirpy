@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -37,6 +39,98 @@ func (cfg *apiConfig) handlerResetMetrics(w http.ResponseWriter, r *http.Request
 	w.Write([]byte("OK"))
 }
 
+func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
+	type returnError struct {
+		Error string `json:"error"`
+	}
+
+	// if !isJson {}
+	if !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(400)
+		resBody, err := json.Marshal(
+			returnError{
+				Error: "Something went wrong",
+			},
+		)
+		if err != nil {
+			resBody = []byte{}
+		}
+		w.Write(resBody)
+		return
+	}
+
+	// read Chirp
+	type chirp struct {
+		Body string `json:"body"`
+	}
+	reqData := []byte{}
+	if _, err := r.Body.Read(reqData); err != nil {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(400)
+		resBody, err := json.Marshal(
+			returnError{
+				Error: "Something went wrong",
+			},
+		)
+		if err != nil {
+			resBody = []byte{}
+		}
+		w.Write(resBody)
+		return
+	}
+
+	// parse chirp
+	oneChirp := &chirp{}
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(oneChirp); err != nil {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(400)
+		resBody, err := json.Marshal(
+			returnError{
+				Error: "Something went wrong",
+			},
+		)
+		if err != nil {
+			resBody = []byte{}
+		}
+		w.Write(resBody)
+		return
+	}
+
+	// validate length
+	if len(oneChirp.Body) > 140 {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(400)
+		resBody, err := json.Marshal(
+			returnError{
+				Error: "Chirp is too long",
+			},
+		)
+		if err != nil {
+			resBody = []byte{}
+		}
+		w.Write(resBody)
+		return
+	}
+
+	// is valid
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	type returnVals struct {
+		Valid bool `json:"valid"`
+	}
+	respVals := returnVals{
+		Valid: true,
+	}
+	resBody, err := json.Marshal(respVals)
+	if err != nil {
+		resBody = []byte{}
+	}
+	w.Write(resBody)
+}
+
 func main() {
 	cfg := apiConfig{}
 
@@ -49,6 +143,7 @@ func main() {
 	})
 	serveMux.HandleFunc("GET /admin/metrics", cfg.handlerGetMetrics)
 	serveMux.HandleFunc("POST /admin/reset", cfg.handlerResetMetrics)
+	serveMux.HandleFunc("POST /api/validate_chirp", cfg.handlerValidateChirp)
 	server := http.Server{
 		Addr:    ":8080",
 		Handler: &serveMux,
