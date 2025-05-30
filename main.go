@@ -39,6 +39,19 @@ func (cfg *apiConfig) handlerResetMetrics(w http.ResponseWriter, r *http.Request
 	w.Write([]byte("OK"))
 }
 
+func replaceProfanities(s string) string {
+	profaneWords := []string{"kerfuffle", "sharbert", "fornax"}
+	chirpWords := strings.Split(s, " ")
+	for i, chirpWord := range chirpWords {
+		for _, profaneWord := range profaneWords {
+			if strings.ToLower(chirpWord) == profaneWord {
+				chirpWords[i] = "****"
+			}
+		}
+	}
+	return strings.Join(chirpWords, " ")
+}
+
 func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
 	type returnError struct {
 		Error string `json:"error"`
@@ -119,10 +132,10 @@ func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(200)
 
 	type returnVals struct {
-		Valid bool `json:"valid"`
+		CleanedBody string `json:"cleaned_body"`
 	}
 	respVals := returnVals{
-		Valid: true,
+		CleanedBody: replaceProfanities(oneChirp.Body),
 	}
 	resBody, err := json.Marshal(respVals)
 	if err != nil {
