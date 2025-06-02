@@ -1,11 +1,18 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/marekmchl/Chirpy/internal/database"
 )
 
 type apiConfig struct {
@@ -145,6 +152,15 @@ func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Reques
 }
 
 func main() {
+	godotenv.Load(".env")
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("failed - %v", err)
+	}
+	dbQueries := database.New(db)
+	fmt.Printf("%v\n", dbQueries) // placeholder
+
 	cfg := apiConfig{}
 
 	serveMux := http.ServeMux{}
