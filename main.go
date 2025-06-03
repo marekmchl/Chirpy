@@ -28,13 +28,15 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 func getConfig() *apiConfig {
 	godotenv.Load(".env")
 	dbURL := os.Getenv("DB_URL")
+	platform := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("failed - %v", err)
 	}
 	dbQueries := database.New(db)
 	cfg := &apiConfig{
-		db: dbQueries,
+		db:       dbQueries,
+		platform: platform,
 	}
 	cfg.fileserverHits.Store(0)
 	return cfg
