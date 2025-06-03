@@ -9,7 +9,9 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/marekmchl/Chirpy/internal/database"
@@ -17,6 +19,7 @@ import (
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -41,6 +44,11 @@ func (cfg *apiConfig) handlerGetMetrics(w http.ResponseWriter, r *http.Request) 
 
 func (cfg *apiConfig) handlerResetMetrics(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
+	if err := cfg.db.DeleteAllUsers(r.Context()); err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+	}
 	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(200)
 	w.Write([]byte("OK"))
@@ -151,6 +159,52 @@ func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Reques
 	w.Write(resBody)
 }
 
+func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
+	type emailStruct struct {
+		Email string `json:"email"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	reqData := emailStruct{}
+	if err := decoder.Decode(&reqData); err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	rawUser, err := cfg.db.CreateUser(r.Context(), reqData.Email)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+
+	type userStruct struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+	user := userStruct{
+		ID:        rawUser.ID,
+		CreatedAt: rawUser.CreatedAt,
+		UpdatedAt: rawUser.UpdatedAt,
+		Email:     rawUser.Email,
+	}
+	userJson, err := json.Marshal(user)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(201)
+	w.Write(userJson)
+	return
+}
+
 func main() {
 	godotenv.Load(".env")
 	dbURL := os.Getenv("DB_URL")
@@ -159,9 +213,9 @@ func main() {
 		log.Fatalf("failed - %v", err)
 	}
 	dbQueries := database.New(db)
-	fmt.Printf("%v\n", dbQueries) // placeholder
-
-	cfg := apiConfig{}
+	cfg := apiConfig{
+		db: dbQueries,
+	}
 
 	serveMux := http.ServeMux{}
 	serveMux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
@@ -173,6 +227,7 @@ func main() {
 	serveMux.HandleFunc("GET /admin/metrics", cfg.handlerGetMetrics)
 	serveMux.HandleFunc("POST /admin/reset", cfg.handlerResetMetrics)
 	serveMux.HandleFunc("POST /api/validate_chirp", cfg.handlerValidateChirp)
+	serveMux.HandleFunc("POST /api/users", cfg.handlerCreateUser)
 	server := http.Server{
 		Addr:    ":8080",
 		Handler: &serveMux,
