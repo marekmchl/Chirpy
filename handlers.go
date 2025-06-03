@@ -24,11 +24,18 @@ func (cfg *apiConfig) handlerGetMetrics(w http.ResponseWriter, r *http.Request) 
 }
 
 func (cfg *apiConfig) handlerResetMetrics(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(403)
+		w.Write([]byte("Forbidden"))
+		return
+	}
 	cfg.fileserverHits.Store(0)
 	if err := cfg.db.DeleteAllUsers(r.Context()); err != nil {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(500)
 		w.Write([]byte("Internal Server Error"))
+		return
 	}
 	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(200)
