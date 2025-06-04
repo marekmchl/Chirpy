@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/marekmchl/Chirpy/internal/database"
 )
 
 func (cfg *apiConfig) handlerGetMetrics(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +56,7 @@ func replaceProfanities(s string) string {
 	return strings.Join(chirpWords, " ")
 }
 
-func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type returnError struct {
 		Error string `json:"error"`
 	}
@@ -78,7 +79,8 @@ func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Reques
 
 	// read Chirp
 	type chirp struct {
-		Body string `json:"body"`
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
 	}
 	reqData := []byte{}
 	if _, err := r.Body.Read(reqData); err != nil {
@@ -130,15 +132,30 @@ func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// is valid
-	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	type returnVals struct {
-		CleanedBody string `json:"cleaned_body"`
+	// is valid -> create chirp
+	dbChirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   replaceProfanities(oneChirp.Body),
+		UserID: oneChirp.UserID,
+	})
+	if err != nil {
+		return
 	}
-	respVals := returnVals{
-		CleanedBody: replaceProfanities(oneChirp.Body),
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	type resChirpStruct struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
+	}
+	respVals := resChirpStruct{
+		ID:        dbChirp.ID,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		Body:      dbChirp.Body,
+		UserID:    dbChirp.UserID,
 	}
 	resBody, err := json.Marshal(respVals)
 	if err != nil {
