@@ -77,28 +77,12 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// read Chirp
+	// parse chirp
 	type chirp struct {
 		Body   string    `json:"body"`
 		UserID uuid.UUID `json:"user_id"`
 	}
-	reqData := []byte{}
-	if _, err := r.Body.Read(reqData); err != nil {
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(400)
-		resBody, err := json.Marshal(
-			returnError{
-				Error: "Something went wrong",
-			},
-		)
-		if err != nil {
-			resBody = []byte{}
-		}
-		w.Write(resBody)
-		return
-	}
 
-	// parse chirp
 	oneChirp := &chirp{}
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(oneChirp); err != nil {
