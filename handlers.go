@@ -193,3 +193,43 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 	w.Write(userJson)
 	return
 }
+
+func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
+	type chirpStruct struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
+	}
+
+	dbChirps, err := cfg.db.GetAllChirps(r.Context())
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+
+	chirpStructs := []chirpStruct{}
+	for _, dbChirp := range dbChirps {
+		chirpStructs = append(chirpStructs, chirpStruct{
+			ID:        dbChirp.ID,
+			CreatedAt: dbChirp.CreatedAt,
+			UpdatedAt: dbChirp.UpdatedAt,
+			Body:      dbChirp.Body,
+			UserID:    dbChirp.ID,
+		})
+	}
+
+	chirpsJson, err := json.Marshal(chirpStructs)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write(chirpsJson)
+}
