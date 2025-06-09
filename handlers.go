@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/marekmchl/Chirpy/internal/auth"
 	"github.com/marekmchl/Chirpy/internal/database"
 )
 
@@ -150,7 +151,8 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
 	type emailStruct struct {
-		Email string `json:"email"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	reqData := emailStruct{}
@@ -161,7 +163,17 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rawUser, err := cfg.db.CreateUser(r.Context(), reqData.Email)
+	hashedPassword, err := auth.HashPassword(reqData.Password)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+	rawUser, err := cfg.db.CreateUser(r.Context(), database.CreateUserParams{
+		HashedPassword: hashedPassword,
+		Email:          reqData.Email,
+	})
 	if err != nil {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(500)
@@ -276,4 +288,56 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write(chirpJson)
+}
+
+func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
+	type loginStruct struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	reqData := loginStruct{}
+	if err := decoder.Decode(&reqData); err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	userDB, err := cfg.db.GetUserByEmail(r.Context(), reqData.Email)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write([]byte("Incorrect email or password"))
+		return
+	}
+
+	if err := auth.CheckPasswordHash(userDB.HashedPassword, reqData.Password); err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write([]byte("Incorrect email or password"))
+		return
+	}
+	type userStruct struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+	user := userStruct{
+		ID:        userDB.ID,
+		CreatedAt: userDB.CreatedAt,
+		UpdatedAt: userDB.UpdatedAt,
+		Email:     userDB.Email,
+	}
+	userJson, err := json.Marshal(user)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write(userJson)
+	return
 }
