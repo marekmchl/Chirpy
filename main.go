@@ -16,6 +16,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	secret         string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -29,6 +30,7 @@ func getConfig() *apiConfig {
 	godotenv.Load(".env")
 	dbURL := os.Getenv("DB_URL")
 	pltfrm := os.Getenv("PLATFORM")
+	secret := os.Getenv("SECRET")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("failed - %v", err)
@@ -37,6 +39,7 @@ func getConfig() *apiConfig {
 	cfg := &apiConfig{
 		db:       dbQueries,
 		platform: pltfrm,
+		secret:   secret,
 	}
 	cfg.fileserverHits.Store(0)
 	return cfg

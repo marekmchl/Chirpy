@@ -117,16 +117,58 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// user authorization
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(500)
+		resBody, err := json.Marshal(
+			returnError{
+				Error: "Internal server error",
+			},
+		)
+		if err != nil {
+			resBody = []byte{}
+		}
+		w.Write(resBody)
+		return
+	}
+
+	tokenID, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(401)
+		resBody, err := json.Marshal(
+			returnError{
+				Error: "Unauthorized",
+			},
+		)
+		if err != nil {
+			resBody = []byte{}
+		}
+		w.Write(resBody)
+		return
+	}
+
 	// is valid -> create chirp
 	dbChirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   replaceProfanities(oneChirp.Body),
-		UserID: oneChirp.UserID,
+		UserID: tokenID,
 	})
 	if err != nil {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(500)
+		resBody, err := json.Marshal(
+			returnError{
+				Error: "Internal server error",
+			},
+		)
+		if err != nil {
+			resBody = []byte{}
+		}
+		w.Write(resBody)
 		return
 	}
-	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(201)
 
 	type resChirpStruct struct {
 		ID        uuid.UUID `json:"id"`
@@ -146,6 +188,8 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		resBody = []byte{}
 	}
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(201)
 	w.Write(resBody)
 }
 
@@ -292,16 +336,23 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type loginStruct struct {
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password         string `json:"password"`
+		Email            string `json:"email"`
+		ExpiresInSeconds int    `json:"expires_in_seconds"`
 	}
+	reqData := loginStruct{
+		ExpiresInSeconds: 3600,
+	}
+
 	decoder := json.NewDecoder(r.Body)
-	reqData := loginStruct{}
 	if err := decoder.Decode(&reqData); err != nil {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(400)
 		w.Write([]byte(err.Error()))
 		return
+	}
+	if reqData.ExpiresInSeconds > 3600 {
+		reqData.ExpiresInSeconds = 3600
 	}
 	userDB, err := cfg.db.GetUserByEmail(r.Context(), reqData.Email)
 	if err != nil {
@@ -317,18 +368,30 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Incorrect email or password"))
 		return
 	}
+
+	token, err := auth.MakeJWT(userDB.ID, cfg.secret, time.Duration(reqData.ExpiresInSeconds*int(time.Second)))
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write([]byte("Incorrect email or password"))
+		return
+	}
+
 	type userStruct struct {
 		ID        uuid.UUID `json:"id"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
 		Email     string    `json:"email"`
+		Token     string    `json:"token"`
 	}
 	user := userStruct{
 		ID:        userDB.ID,
 		CreatedAt: userDB.CreatedAt,
 		UpdatedAt: userDB.UpdatedAt,
 		Email:     userDB.Email,
+		Token:     token,
 	}
+
 	userJson, err := json.Marshal(user)
 	if err != nil {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
