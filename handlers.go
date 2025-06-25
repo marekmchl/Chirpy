@@ -336,13 +336,10 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type loginStruct struct {
-		Password         string `json:"password"`
-		Email            string `json:"email"`
-		ExpiresInSeconds int    `json:"expires_in_seconds"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
-	reqData := loginStruct{
-		ExpiresInSeconds: 3600,
-	}
+	reqData := loginStruct{}
 
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&reqData); err != nil {
@@ -351,9 +348,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(err.Error()))
 		return
 	}
-	if reqData.ExpiresInSeconds > 3600 {
-		reqData.ExpiresInSeconds = 3600
-	}
+
 	userDB, err := cfg.db.GetUserByEmail(r.Context(), reqData.Email)
 	if err != nil {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
@@ -369,7 +364,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.MakeJWT(userDB.ID, cfg.secret, time.Duration(reqData.ExpiresInSeconds*int(time.Second)))
+	token, err := auth.MakeJWT(userDB.ID, cfg.secret, time.Duration(10*time.Minute))
 	if err != nil {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(401)
@@ -377,19 +372,35 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	refreshTokenString, err := auth.MakeRefreshToken()
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal server error - failed to make refresh token"))
+		return
+	}
+	fmt.Printf("%v : %v\n", refreshTokenString, err)
+	cfg.db.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		Token:     refreshTokenString,
+		UserID:    userDB.ID,
+		ExpiresAt: time.Now().Add(time.Duration(1 * time.Hour)),
+	})
+
 	type userStruct struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
-		Token     string    `json:"token"`
+		ID           uuid.UUID `json:"id"`
+		CreatedAt    time.Time `json:"created_at"`
+		UpdatedAt    time.Time `json:"updated_at"`
+		Email        string    `json:"email"`
+		Token        string    `json:"token"`
+		RefreshToken string    `json:"refresh_token"`
 	}
 	user := userStruct{
-		ID:        userDB.ID,
-		CreatedAt: userDB.CreatedAt,
-		UpdatedAt: userDB.UpdatedAt,
-		Email:     userDB.Email,
-		Token:     token,
+		ID:           userDB.ID,
+		CreatedAt:    userDB.CreatedAt,
+		UpdatedAt:    userDB.UpdatedAt,
+		Email:        userDB.Email,
+		Token:        token,
+		RefreshToken: refreshTokenString,
 	}
 
 	userJson, err := json.Marshal(user)
@@ -403,4 +414,80 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	w.Write(userJson)
 	return
+}
+
+func (cfg *apiConfig) handlerRefresh(w http.ResponseWriter, r *http.Request) {
+	refreshTokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+
+	refreshToken, err := cfg.db.GetRefreshTokenByToken(r.Context(), refreshTokenString)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write([]byte("Unauthorized Request"))
+		return
+	}
+	if refreshToken.RevokedAt.Valid {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write([]byte("Unauthorized Request"))
+		return
+	}
+
+	user, err := cfg.db.GetUserFromRefreshToken(r.Context(), refreshToken.Token)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+
+	accessToken, err := auth.MakeJWT(user.ID, cfg.secret, time.Duration(1*time.Hour))
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+
+	type returnTokenType struct {
+		Token string `json:"token"`
+	}
+	returnToken := returnTokenType{Token: accessToken}
+
+	tokenJson, err := json.Marshal(returnToken)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write([]byte("Internal Server Error"))
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write(tokenJson)
+	return
+}
+
+func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
+	refreshTokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write(fmt.Appendf([]byte{}, "Internal Server Error - %v", err))
+		return
+	}
+
+	if err := cfg.db.RevokeRefreshToken(r.Context(), refreshTokenString); err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write(fmt.Appendf([]byte{}, "Internal Server Error - %v", err))
+		return
+	}
+
+	w.WriteHeader(204)
 }
