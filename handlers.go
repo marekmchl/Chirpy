@@ -379,7 +379,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Internal server error - failed to make refresh token"))
 		return
 	}
-	fmt.Printf("%v : %v\n", refreshTokenString, err)
 	cfg.db.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
 		Token:     refreshTokenString,
 		UserID:    userDB.ID,
