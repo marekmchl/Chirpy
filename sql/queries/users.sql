@@ -17,3 +17,6 @@ SELECT * FROM users WHERE email = $1;
 
 -- name: GetUserFromRefreshToken :one
 SELECT * FROM users JOIN refresh_tokens ON users.id = refresh_tokens.user_id WHERE refresh_tokens.token = $1;
+
+-- name: UpdateUserWithID :one
+UPDATE users SET updated_at = NOW(), hashed_password = $2, email = $3 WHERE id = $1 RETURNING *;

@@ -490,3 +490,79 @@ func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(204)
 }
+
+func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
+	reqJWT, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write(fmt.Appendf([]byte{}, "Failed reading token from header: %v", err))
+		return
+	}
+	reqUserID, err := auth.ValidateJWT(reqJWT, cfg.secret)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write(fmt.Appendf([]byte{}, "Failed reading token from header: %v", err))
+		return
+	}
+
+	type passAndEmail struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	reqData := passAndEmail{}
+	if err := decoder.Decode(&reqData); err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write(fmt.Appendf([]byte{}, "Failed decoding data: %v", err))
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(reqData.Password)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write(fmt.Appendf([]byte{}, "Failed hashing the password: %v", err))
+		return
+	}
+
+	dbUser, err := cfg.db.UpdateUserWithID(r.Context(), database.UpdateUserWithIDParams{
+		ID:             reqUserID,
+		HashedPassword: hashedPassword,
+		Email:          reqData.Email,
+	})
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write(fmt.Appendf([]byte{}, "Failed updating the user credentials: %v", err))
+		return
+	}
+
+	type userInfo struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+
+	user := userInfo{
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+	}
+
+	userJson, err := json.Marshal(user)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(500)
+		w.Write(fmt.Appendf([]byte{}, "Failed marshalling the response body: %v", err))
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write(userJson)
+}
