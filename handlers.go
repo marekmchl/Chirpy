@@ -309,8 +309,8 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 	dbChirp, err := cfg.db.GetChirpByID(r.Context(), reqID)
 	if err != nil {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(500)
-		w.Write([]byte("Internal Server Error"))
+		w.WriteHeader(404)
+		w.Write([]byte("Chirp not found"))
 		return
 	}
 
@@ -565,4 +565,56 @@ func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) 
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write(userJson)
+}
+
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	reqJWT, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write(fmt.Appendf([]byte{}, "Failed getting token: %v", err))
+		return
+	}
+
+	reqUserID, err := auth.ValidateJWT(reqJWT, cfg.secret)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(403)
+		w.Write(fmt.Appendf([]byte{}, "Token invalid"))
+		return
+	}
+
+	reqID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(403)
+		w.Write(fmt.Appendf([]byte{}, "Failed parsing the ID: %v", err))
+		return
+	}
+
+	chirpDB, err := cfg.db.GetChirpByID(r.Context(), reqID)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(404)
+		w.Write(fmt.Appendf([]byte{}, "Chirp with ID %v not found", reqID))
+		return
+	}
+
+	if chirpDB.UserID != reqUserID {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(403)
+		w.Write(fmt.Appendf([]byte{}, "Unauthorized request"))
+		return
+	}
+
+	if err := cfg.db.DeleteChirpByID(r.Context(), reqID); err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(404)
+		w.Write(fmt.Appendf([]byte{}, "Chirp with ID %v not found", reqID))
+		return
+	}
+
+	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(204)
+	w.Write(fmt.Appendf([]byte{}, "Chirp deleted"))
 }
