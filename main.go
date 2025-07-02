@@ -66,6 +66,7 @@ func main() {
 	serveMux.HandleFunc("POST /api/revoke", cfg.handlerRevoke)
 	serveMux.HandleFunc("PUT /api/users", cfg.handlerUpdateUser)
 	serveMux.HandleFunc("DELETE /api/chirps/{chirpID}", cfg.handlerDeleteChirp)
+	serveMux.HandleFunc("POST /api/polka/webhooks", cfg.handlerPolkaWebhook)
 
 	server := http.Server{
 		Addr:    ":8080",
