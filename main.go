@@ -17,6 +17,7 @@ type apiConfig struct {
 	db             *database.Queries
 	platform       string
 	secret         string
+	polkaKey       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -31,6 +32,7 @@ func getConfig() *apiConfig {
 	dbURL := os.Getenv("DB_URL")
 	pltfrm := os.Getenv("PLATFORM")
 	secret := os.Getenv("SECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("failed - %v", err)
@@ -40,6 +42,7 @@ func getConfig() *apiConfig {
 		db:       dbQueries,
 		platform: pltfrm,
 		secret:   secret,
+		polkaKey: polkaKey,
 	}
 	cfg.fileserverHits.Store(0)
 	return cfg

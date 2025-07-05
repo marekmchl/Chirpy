@@ -102,3 +102,15 @@ func MakeRefreshToken() (string, error) {
 
 	return hex.EncodeToString(refreshTokenBytes), nil
 }
+
+func GetAPIKey(headers http.Header) (string, error) {
+	authString := headers.Get("Authorization")
+
+	authSlice := strings.Split(authString, " ")
+
+	if strings.TrimSpace(authSlice[0]) != "ApiKey" {
+		return "", fmt.Errorf("'%v' is not 'ApiKey'", strings.TrimSpace(authSlice[0]))
+	}
+
+	return strings.TrimSpace(authSlice[1]), nil
+}

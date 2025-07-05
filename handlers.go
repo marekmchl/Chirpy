@@ -626,6 +626,20 @@ func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request)
 }
 
 func (cfg *apiConfig) handlerPolkaWebhook(w http.ResponseWriter, r *http.Request) {
+	key, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write(fmt.Appendf([]byte{}, "Failed getting API key: %v", err))
+		return
+	}
+	if key != cfg.polkaKey {
+		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(401)
+		w.Write(fmt.Appendf([]byte{}, "API key doesn't match"))
+		return
+	}
+
 	type requestBody struct {
 		Event string `json:"event"`
 		Data  struct {
